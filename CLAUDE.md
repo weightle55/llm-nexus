@@ -1,10 +1,12 @@
 # CLAUDE.md
 
-이 파일은 Claude Code (claude.ai/code)가 이 저장소에서 작업할 때 참고할 가이드입니다.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 개요
 
 로컬 LLM(llama-server + Gemma 4)을 웹에서 명령해 컴퓨터 작업을 수행하는 agent 시스템.
+
+> **현재 진척도**: Phase 2 완료 (FastAPI 골격 + 헬스체크). 다음은 Phase 3 (DB 연결 — SQLAlchemy async + ORM). 단계별 로드맵과 일간 로그는 `plan/plan.md`, `plan/*-progress.md` 참고.
 
 ## 스택
 
@@ -26,11 +28,24 @@ docker compose up -d postgres
 .venv\Scripts\pip install -r backend\requirements.txt
 .venv\Scripts\uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# 4. Frontend (Next.js)
+# 4. Frontend (Next.js) — 아직 스캐폴드 안 됨 (Phase 7)
 cd frontend
 npm install
 npm run dev
 ```
+
+## 검증 엔드포인트
+
+백엔드 변경 후 빠른 확인:
+
+- `GET http://localhost:8000/health` — 정적 정보 (모델명, llama base URL)
+- `GET http://localhost:8000/health/llm` — llama-server `/v1/models` 실제 호출. llama-server 미기동 시 `{"status":"error", ...}` 200 반환이 정상 (예외 대신 메시지)
+
+테스트 스위트는 아직 없음 (Phase 8 마무리 단계 예정). 신규 백엔드 코드 검증은 위 엔드포인트와 수동 cURL/REPL로 진행.
+
+## 설정 규약
+
+`backend/app/config.py`는 `pydantic-settings` 기반이고 `.env`를 **프로젝트 루트**에서 읽음. `WORKSPACE_DIR` 같은 경로 설정은 `PROJECT_ROOT` 기준으로 자동 절대화됨 (`_resolve_workspace` validator 참고). 새 경로 설정 추가 시 동일 패턴을 따를 것.
 
 ## 안전 정책 (Tool Permission)
 
