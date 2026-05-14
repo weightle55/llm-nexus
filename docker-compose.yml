@@ -12,7 +12,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - "F:/development/gemma-ai-structure/postgres/data:/var/lib/postgresql/data"
+      - "./postgres/data:/var/lib/postgresql/data"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gemma -d gemma"]
@@ -27,5 +27,5 @@ services:
   #   ports:
   #     - "6333:6333"
   #   volumes:
-  #     - "F:/development/gemma-ai-structure/qdrant/data:/qdrant/storage"
+  #     - "./qdrant/data:/qdrant/storage"
   #   restart: always
