@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 로컬 LLM(llama-server + Gemma 4)을 웹에서 명령해 컴퓨터 작업을 수행하는 agent 시스템.
 
-> **현재 진척도**: Phase 2 완료 (FastAPI 골격 + 헬스체크). 다음은 Phase 3 (DB 연결 — SQLAlchemy async + ORM). 단계별 로드맵과 일간 로그는 `plan/plan.md`, `plan/*-progress.md` 참고.
+> **현재 진척도**: Phase 3 완료 (FastAPI + SQLAlchemy async + ORM, `create_all()`로 테이블 생성). 다음은 Phase 4 (Agent 루프 — tool-calling + fs 도구). 단계별 로드맵과 일간 로그는 `plan/plan.md`, `plan/*-progress.md` 참고.
 
 ## 스택
 
-- **LLM**: llama-server (네이티브 실행, :8080, OpenAI 호환 API)
+- **LLM**: llama-server (네이티브 실행, :11434, OpenAI 호환 API)
 - **Backend**: FastAPI + 단일 agent + tool-calling 루프 (`backend/`)
 - **Frontend**: Next.js (App Router) + Tailwind + TanStack Query (`frontend/`)
 - **DB**: PostgreSQL 17 (Docker, :5432) — 세션·메시지·audit 저장
@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```powershell
 # 1. LLM 서버 (네이티브)
-.\llama-server.exe -m "F:\development\ai-models\gemma-4-e4b-it-UD-Q4_K_XL\gemma-4-e4b-it-UD-Q4_K_XL.gguf" -ngl 99 -c 8192 --flash-attn on --port 8080
+.\llama-server.exe -m "F:\development\ai-models\gemma-4-e4b-it-UD-Q4_K_XL\gemma-4-e4b-it-UD-Q4_K_XL.gguf" -ngl 99 -c 8192 --flash-attn on --port 11434
 
 # 2. PostgreSQL (Docker)
 docker compose up -d postgres
@@ -40,12 +40,18 @@ npm run dev
 
 - `GET http://localhost:8000/health` — 정적 정보 (모델명, llama base URL)
 - `GET http://localhost:8000/health/llm` — llama-server `/v1/models` 실제 호출. llama-server 미기동 시 `{"status":"error", ...}` 200 반환이 정상 (예외 대신 메시지)
+- `GET http://localhost:8000/health/db` — Postgres `SELECT 1` 핑. 동일하게 미연결 시 `{"status":"error", ...}` 반환
 
 테스트 스위트는 아직 없음 (Phase 8 마무리 단계 예정). 신규 백엔드 코드 검증은 위 엔드포인트와 수동 cURL/REPL로 진행.
 
 ## 설정 규약
 
 `backend/app/config.py`는 `pydantic-settings` 기반이고 `.env`를 **프로젝트 루트**에서 읽음. `WORKSPACE_DIR` 같은 경로 설정은 `PROJECT_ROOT` 기준으로 자동 절대화됨 (`_resolve_workspace` validator 참고). 새 경로 설정 추가 시 동일 패턴을 따를 것.
+
+## 커밋 규약
+
+- 커밋 메시지는 **한글**로 작성한다 (제목·본문 모두). Conventional Commits 접두사(`feat`, `fix`, `docs`, `chore` 등)는 영문 그대로 사용.
+- PR 제목·본문도 한글을 기본으로 한다.
 
 ## 안전 정책 (Tool Permission)
 

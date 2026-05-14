@@ -1,9 +1,20 @@
+from contextlib import asynccontextmanager
+
 import httpx
 from fastapi import FastAPI
+from sqlalchemy import text
 
 from .config import settings
+from .db import SessionLocal, init_db
 
-app = FastAPI(title="Gemma Local Agent", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
+
+
+app = FastAPI(title="Gemma Local Agent", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -24,4 +35,16 @@ async def health_llm():
             r.raise_for_status()
             return {"status": "ok", "data": r.json()}
     except httpx.HTTPError as e:
+        return {"status": "error", "detail": str(e)}
+
+
+@app.get("/health/db")
+async def health_db():
+    """PostgreSQL 연결 확인 (SELECT 1)."""
+    try:
+        async with SessionLocal() as session:
+            result = await session.execute(text("SELECT 1"))
+            value = result.scalar()
+            return {"status": "ok", "result": value}
+    except Exception as e:
         return {"status": "error", "detail": str(e)}
