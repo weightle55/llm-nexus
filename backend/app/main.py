@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from .config import settings
 from .db import SessionLocal, init_db
+from .routes import approvals as approvals_router
 from .routes import chat as chat_router
 from .routes import sessions as sessions_router
 
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Gemma Local Agent", version="0.1.0", lifespan=lifespan)
 app.include_router(sessions_router.router)
 app.include_router(chat_router.router)
+app.include_router(approvals_router.router)
 
 
 @app.get("/health")
