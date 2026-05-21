@@ -8,7 +8,7 @@ client = AsyncOpenAI(
 )
 
 
-async def chat(messages, tools=None, tool_choice="auto"):
+async def chat(messages, tools=None, tool_choice="auto", stream=False):
     kwargs = {
         "model": settings.llama_model,
         "messages": messages,
@@ -18,4 +18,6 @@ async def chat(messages, tools=None, tool_choice="auto"):
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = tool_choice
+    if stream:
+        kwargs["stream"] = True
     return await client.chat.completions.create(**kwargs)

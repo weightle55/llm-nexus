@@ -1,7 +1,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,8 @@ SYSTEM_PROMPT = (
     "leave the final response empty."
 )
 
+Event = tuple[str, dict[str, Any]]
+
 
 def _message_to_openai(m: Message) -> dict[str, Any]:
     if m.role == "assistant" and m.tool_calls:
@@ -39,17 +41,6 @@ def _message_to_openai(m: Message) -> dict[str, Any]:
             "content": m.content or "",
         }
     return {"role": m.role, "content": m.content or ""}
-
-
-def _serialize_tool_call(tc) -> dict[str, Any]:
-    return {
-        "id": tc.id,
-        "type": "function",
-        "function": {
-            "name": tc.function.name,
-            "arguments": tc.function.arguments,
-        },
-    }
 
 
 def _approval_dict(a: Approval) -> dict[str, Any]:
@@ -118,38 +109,59 @@ async def _pending_approvals(
     ).scalars().all()
 
 
-async def _execute_or_defer(
+async def _stream_completion(
+    convo: list[dict[str, Any]],
+    out: dict[str, Any],
+) -> AsyncGenerator[Event, None]:
+    """LLM 호출을 스트림으로 소비하면서 'token' 이벤트를 yield. 결과는 `out` 딕셔너리에 저장."""
+    stream = await llm.chat(convo, tools=TOOLS, stream=True)
+    content_parts: list[str] = []
+    tc_buf: dict[int, dict[str, Any]] = {}
+
+    async for chunk in stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if delta.content:
+            content_parts.append(delta.content)
+            yield ("token", {"delta": delta.content})
+        if delta.tool_calls:
+            for tcd in delta.tool_calls:
+                idx = tcd.index
+                slot = tc_buf.setdefault(
+                    idx, {"id": "", "name": "", "arguments": ""}
+                )
+                if tcd.id:
+                    slot["id"] = tcd.id
+                if tcd.function:
+                    if tcd.function.name:
+                        slot["name"] += tcd.function.name
+                    if tcd.function.arguments:
+                        slot["arguments"] += tcd.function.arguments
+
+    out["content"] = "".join(content_parts)
+    out["tool_calls"] = [
+        {
+            "id": tc_buf[i]["id"],
+            "type": "function",
+            "function": {
+                "name": tc_buf[i]["name"],
+                "arguments": tc_buf[i]["arguments"],
+            },
+        }
+        for i in sorted(tc_buf)
+    ]
+
+
+async def _run_auto_tool(
     db: AsyncSession,
     session_id: uuid.UUID,
-    tc,
+    s_tc: dict[str, Any],
     convo: list[dict[str, Any]],
-) -> bool:
-    """tool_call 을 자동 실행하거나 승인 큐에 적재. 적재된 경우 True 반환."""
-    name = tc.function.name
-    args_json = tc.function.arguments or "{}"
-
-    if name in APPROVAL_REQUIRED:
-        try:
-            args_obj = json.loads(args_json)
-        except json.JSONDecodeError:
-            args_obj = {"_raw": args_json}
-        db.add(
-            Approval(
-                session_id=session_id,
-                tool_name=name,
-                tool_call_id=tc.id,
-                arguments=args_obj,
-                status="pending",
-            )
-        )
-        await _audit(
-            db,
-            session_id,
-            "approval_requested",
-            {"tool": name, "arguments": args_json, "tool_call_id": tc.id},
-        )
-        await db.flush()
-        return True
+) -> str:
+    name = s_tc["function"]["name"]
+    args_json = s_tc["function"].get("arguments") or "{}"
+    tc_id = s_tc["id"]
 
     result = call_tool(name, args_json)
     await _audit(
@@ -163,94 +175,137 @@ async def _execute_or_defer(
         session_id,
         "tool",
         result,
-        tool_calls={"tool_call_id": tc.id, "name": name},
+        tool_calls={"tool_call_id": tc_id, "name": name},
     )
     convo.append(
-        {
-            "role": "tool",
-            "tool_call_id": tc.id,
-            "name": name,
-            "content": result,
-        }
+        {"role": "tool", "tool_call_id": tc_id, "name": name, "content": result}
     )
-    return False
+    return result
 
 
-async def _loop(
+async def _queue_approval(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    s_tc: dict[str, Any],
+) -> None:
+    name = s_tc["function"]["name"]
+    args_json = s_tc["function"].get("arguments") or "{}"
+    tc_id = s_tc["id"]
+    try:
+        args_obj = json.loads(args_json)
+    except json.JSONDecodeError:
+        args_obj = {"_raw": args_json}
+    db.add(
+        Approval(
+            session_id=session_id,
+            tool_name=name,
+            tool_call_id=tc_id,
+            arguments=args_obj,
+            status="pending",
+        )
+    )
+    await _audit(
+        db,
+        session_id,
+        "approval_requested",
+        {"tool": name, "arguments": args_json, "tool_call_id": tc_id},
+    )
+    await db.flush()
+
+
+async def _loop_stream(
     db: AsyncSession,
     session_id: uuid.UUID,
     convo: list[dict[str, Any]],
-) -> dict[str, Any]:
+) -> AsyncGenerator[Event, None]:
     for _ in range(MAX_TOOL_ITERATIONS):
-        resp = await llm.chat(convo, tools=TOOLS)
-        choice = resp.choices[0].message
-        content = choice.content or ""
+        completion: dict[str, Any] = {}
+        async for ev in _stream_completion(convo, completion):
+            yield ev
+        content: str = completion["content"]
+        tool_calls: list[dict[str, Any]] = completion["tool_calls"]
 
-        if not choice.tool_calls:
+        if not tool_calls:
             await _persist(db, session_id, "assistant", content)
             await db.commit()
-            return {"status": "ok", "reply": content}
+            yield ("done", {"status": "ok", "reply": content})
+            return
 
-        serialized = [_serialize_tool_call(tc) for tc in choice.tool_calls]
-        await _persist(db, session_id, "assistant", content, tool_calls=serialized)
+        await _persist(db, session_id, "assistant", content, tool_calls=tool_calls)
         convo.append(
-            {"role": "assistant", "content": content, "tool_calls": serialized}
+            {"role": "assistant", "content": content, "tool_calls": tool_calls}
         )
 
         deferred_any = False
-        for tc in choice.tool_calls:
-            deferred = await _execute_or_defer(db, session_id, tc, convo)
-            deferred_any = deferred_any or deferred
+        for s_tc in tool_calls:
+            yield ("tool_call", s_tc)
+            name = s_tc["function"]["name"]
+            if name in APPROVAL_REQUIRED:
+                await _queue_approval(db, session_id, s_tc)
+                deferred_any = True
+            else:
+                result = await _run_auto_tool(db, session_id, s_tc, convo)
+                yield (
+                    "tool_result",
+                    {"tool_call_id": s_tc["id"], "name": name, "content": result},
+                )
 
         if deferred_any:
             await db.commit()
             pendings = await _pending_approvals(db, session_id)
-            return {
-                "status": "pending_approval",
-                "approvals": [_approval_dict(a) for a in pendings],
-            }
+            yield (
+                "approval_required",
+                {"approvals": [_approval_dict(a) for a in pendings]},
+            )
+            yield ("done", {"status": "pending_approval"})
+            return
 
     fallback = "[agent stopped: tool iteration limit reached]"
     await _audit(db, session_id, "error", {"reason": "max tool iterations exceeded"})
     await _persist(db, session_id, "assistant", fallback)
     await db.commit()
-    return {"status": "stopped", "reply": fallback}
+    yield ("done", {"status": "stopped", "reply": fallback})
 
 
-async def run_turn(
+async def run_turn_stream(
     db: AsyncSession, session_id: uuid.UUID, user_text: str
-) -> dict[str, Any]:
+) -> AsyncGenerator[Event, None]:
     sess = await db.get(Session, session_id)
     if sess is None:
         raise ValueError(f"session {session_id} not found")
 
     pendings = await _pending_approvals(db, session_id)
     if pendings:
-        return {
-            "status": "pending_approval",
-            "approvals": [_approval_dict(a) for a in pendings],
-        }
+        yield (
+            "approval_required",
+            {"approvals": [_approval_dict(a) for a in pendings]},
+        )
+        yield ("done", {"status": "pending_approval"})
+        return
 
     convo = await _load_history(db, session_id)
     await _persist(db, session_id, "user", user_text)
     convo.append({"role": "user", "content": user_text})
 
-    return await _loop(db, session_id, convo)
+    async for ev in _loop_stream(db, session_id, convo):
+        yield ev
 
 
-async def resume_turn(
+async def resume_turn_stream(
     db: AsyncSession, session_id: uuid.UUID
-) -> dict[str, Any]:
+) -> AsyncGenerator[Event, None]:
     sess = await db.get(Session, session_id)
     if sess is None:
         raise ValueError(f"session {session_id} not found")
 
     pendings = await _pending_approvals(db, session_id)
     if pendings:
-        return {
-            "status": "pending_approval",
-            "approvals": [_approval_dict(a) for a in pendings],
-        }
+        yield (
+            "approval_required",
+            {"approvals": [_approval_dict(a) for a in pendings]},
+        )
+        yield ("done", {"status": "pending_approval"})
+        return
 
     last_assistant = (
         await db.execute(
@@ -266,7 +321,8 @@ async def resume_turn(
     ).scalar_one_or_none()
 
     if last_assistant is None or not last_assistant.tool_calls:
-        return {"status": "ok", "reply": "[nothing to resume]"}
+        yield ("done", {"status": "ok", "reply": "[nothing to resume]"})
+        return
 
     existing_tool_msgs = (
         await db.execute(
@@ -296,7 +352,6 @@ async def resume_turn(
         ).scalar_one_or_none()
 
         if appr is None or appr.status == "pending":
-            # 안전망 — 정상 흐름에선 도달 안 함
             continue
 
         if appr.status == "approved":
@@ -338,9 +393,36 @@ async def resume_turn(
             result,
             tool_calls={"tool_call_id": tc_id, "name": name},
         )
+        yield ("tool_result", {"tool_call_id": tc_id, "name": name, "content": result})
 
     convo = await _load_history(db, session_id)
-    return await _loop(db, session_id, convo)
+    async for ev in _loop_stream(db, session_id, convo):
+        yield ev
+
+
+async def _drain(gen: AsyncGenerator[Event, None]) -> dict[str, Any]:
+    """비스트리밍 호출용 — generator 를 다 소비하고 마지막 done/approval_required 의 결과만 합산."""
+    result: dict[str, Any] = {"status": "ok", "reply": None, "approvals": None}
+    async for event, payload in gen:
+        if event == "done":
+            result["status"] = payload.get("status", result["status"])
+            if "reply" in payload:
+                result["reply"] = payload["reply"]
+        elif event == "approval_required":
+            result["approvals"] = payload.get("approvals")
+    return result
+
+
+async def run_turn(
+    db: AsyncSession, session_id: uuid.UUID, user_text: str
+) -> dict[str, Any]:
+    return await _drain(run_turn_stream(db, session_id, user_text))
+
+
+async def resume_turn(
+    db: AsyncSession, session_id: uuid.UUID
+) -> dict[str, Any]:
+    return await _drain(resume_turn_stream(db, session_id))
 
 
 async def decide_approval(
