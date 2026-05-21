@@ -1,7 +1,9 @@
 import json
 from typing import Any, Callable
 
-from . import fs
+from . import fs, shell
+
+APPROVAL_REQUIRED: set[str] = {"shell_exec"}
 
 TOOLS: list[dict] = [
     {
@@ -47,12 +49,29 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "shell_exec",
+            "description": "Execute a system shell command. REQUIRES USER APPROVAL — the call will pause the agent until a human approves or denies it via the approvals API. Use sparingly and only when a file-system tool cannot accomplish the task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The shell command to run."},
+                    "cwd": {"type": "string", "description": "Working directory (absolute or workspace-relative). Optional."},
+                    "timeout": {"type": "integer", "description": "Timeout in seconds. Defaults to 30."},
+                },
+                "required": ["command"],
+            },
+        },
+    },
 ]
 
 DISPATCH: dict[str, Callable[..., Any]] = {
     "fs_read": fs.fs_read,
     "fs_write": fs.fs_write,
     "fs_list": fs.fs_list,
+    "shell_exec": shell.shell_exec,
 }
 
 
