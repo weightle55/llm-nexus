@@ -41,3 +41,7 @@ audit.log
 # Workspace (agent 작업물은 추적 안 함, 디렉토리만 유지)
 workspace/*
 !workspace/.gitkeep
+
+# 일회성 임시 파일
+.tmp-*.json
+.system-root-cas.pem
