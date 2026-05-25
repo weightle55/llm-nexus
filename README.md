@@ -107,10 +107,12 @@ curl http://localhost:8000/health/db     # Postgres SELECT 1
 ```
 llm-nexus/
 ├── backend/                # FastAPI (Python)
+│   ├── alembic/            # DB 마이그레이션 (env.py + versions/)
+│   ├── alembic.ini
 │   └── app/
 │       ├── main.py         # 엔트리, CORS, 라우터 마운트
 │       ├── config.py       # pydantic-settings, .env 로드
-│       ├── db.py           # SQLAlchemy async engine
+│       ├── db.py           # SQLAlchemy async engine + lifespan 자동 alembic upgrade
 │       ├── models.py       # Session/Message/Approval/AuditLog
 │       ├── agent.py        # tool-calling 스트리밍 루프
 │       ├── llm.py          # OpenAI 클라이언트 (llama-server)
@@ -131,8 +133,28 @@ llm-nexus/
 
 ---
 
+## DB 마이그레이션
+
+스키마 변경은 **Alembic** 으로 관리한다. 백엔드 lifespan 이 기동 때마다 `alembic upgrade head` 를 자동으로 실행하므로 신규 환경에서는 별도 명령이 필요 없다.
+
+기존에 `Base.metadata.create_all()` 로 만들어진 DB 가 이미 있다면 **한 번만** 수동으로 baseline 을 표시한다:
+
+```powershell
+cd backend
+..\.venv\Scripts\alembic.exe stamp head
+cd ..
+```
+
+새 마이그레이션이 필요할 때:
+
+```powershell
+cd backend
+..\.venv\Scripts\alembic.exe revision --autogenerate -m "변경 설명"
+# alembic/versions/ 에 생성된 파일 리뷰
+..\.venv\Scripts\alembic.exe upgrade head    # 또는 백엔드 재기동
+```
+
 ## 약속
 
 - 커밋 메시지·PR 본문은 **한글** (`feat:`, `fix:` 같은 접두사는 영문)
-- 마이그레이션은 현재 `Base.metadata.create_all()`. Alembic 도입은 v1.x 검토 사항.
 - 테스트·Lint 자동화는 미설정 (수동 cURL + 검증 엔드포인트).
