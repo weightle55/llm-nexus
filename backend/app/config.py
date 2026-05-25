@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     obsidian_host: str = "127.0.0.1"
     obsidian_port: int = 27124
 
+    # 인증
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 일
+
     @field_validator("workspace_dir")
     @classmethod
     def _resolve_workspace(cls, v: Path) -> Path:

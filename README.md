@@ -112,7 +112,7 @@ llm-nexus/
 │   └── app/
 │       ├── main.py         # 엔트리, CORS, 라우터 마운트
 │       ├── config.py       # pydantic-settings, .env 로드
-│       ├── db.py           # SQLAlchemy async engine + lifespan 자동 alembic upgrade
+│       ├── db.py           # SQLAlchemy async engine (스키마 적용은 별도 alembic 명령)
 │       ├── models.py       # Session/Message/Approval/AuditLog
 │       ├── agent.py        # tool-calling 스트리밍 루프
 │       ├── llm.py          # OpenAI 클라이언트 (llama-server)
@@ -135,14 +135,22 @@ llm-nexus/
 
 ## DB 마이그레이션
 
-스키마 변경은 **Alembic** 으로 관리한다. 백엔드 lifespan 이 기동 때마다 `alembic upgrade head` 를 자동으로 실행하므로 신규 환경에서는 별도 명령이 필요 없다.
+스키마 변경은 **Alembic** 으로 관리한다. 백엔드 기동 전에 `alembic upgrade head` 를 한 번 실행한다 — `start-all.ps1` 가 자동으로 호출하므로 그 스크립트를 쓰면 별도 명령이 필요 없다.
 
-기존에 `Base.metadata.create_all()` 로 만들어진 DB 가 이미 있다면 **한 번만** 수동으로 baseline 을 표시한다:
+수동으로 백엔드를 띄울 때:
+
+```powershell
+cd backend
+..\.venv\Scripts\alembic.exe upgrade head
+cd ..
+.\.venv\Scripts\uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+기존에 `Base.metadata.create_all()` 로 만들어진 DB 가 이미 있다면 첫 마이그레이션 전에 **한 번만** baseline 을 표시한다:
 
 ```powershell
 cd backend
 ..\.venv\Scripts\alembic.exe stamp head
-cd ..
 ```
 
 새 마이그레이션이 필요할 때:

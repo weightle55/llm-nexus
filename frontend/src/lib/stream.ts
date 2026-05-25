@@ -1,5 +1,6 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { API_BASE, type Approval } from "./api";
+import { authHeader } from "./auth";
 
 export type StreamEvent =
   | { type: "token"; delta: string }
@@ -76,7 +77,7 @@ async function consume(
   try {
     await fetchEventSource(`${API_BASE}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(body),
       signal: handlers.signal,
       openWhenHidden: true,

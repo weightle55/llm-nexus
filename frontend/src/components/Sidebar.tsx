@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Session } from "@/lib/api";
+import { type CurrentUser } from "@/lib/auth";
 import { ThemeToggle } from "./ThemeToggle";
 
 type Props = {
@@ -9,9 +10,18 @@ type Props = {
   onSelect: (id: string) => void;
   isOpen: boolean;
   onClose: () => void;
+  user: CurrentUser;
+  onLogout: () => void;
 };
 
-export function Sidebar({ selectedId, onSelect, isOpen, onClose }: Props) {
+export function Sidebar({
+  selectedId,
+  onSelect,
+  isOpen,
+  onClose,
+  user,
+  onLogout,
+}: Props) {
   const qc = useQueryClient();
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: ["sessions"],
@@ -89,7 +99,16 @@ export function Sidebar({ selectedId, onSelect, isOpen, onClose }: Props) {
             <div className="p-3 text-xs text-neutral-500">No sessions yet.</div>
           )}
         </div>
-        <div className="p-3 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 space-y-2">
+          <div className="text-[11px] text-neutral-500 truncate" title={user.email}>
+            {user.email}
+          </div>
+          <button
+            onClick={onLogout}
+            className="w-full rounded border border-neutral-300 dark:border-neutral-800 px-2 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+          >
+            로그아웃
+          </button>
           <ThemeToggle />
         </div>
       </aside>

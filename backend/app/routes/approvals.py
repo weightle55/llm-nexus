@@ -8,8 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import agent
+from ..auth import get_current_user
 from ..db import get_db
-from ..models import Approval
+from ..models import Approval, Session, User
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -50,8 +51,14 @@ async def list_approvals(
     session_id: uuid.UUID | None = None,
     status: str | None = "pending",
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[ApprovalOut]:
-    stmt = select(Approval).order_by(Approval.created_at.desc())
+    stmt = (
+        select(Approval)
+        .join(Session, Approval.session_id == Session.id)
+        .where(Session.owner_id == user.id)
+        .order_by(Approval.created_at.desc())
+    )
     if session_id is not None:
         stmt = stmt.where(Approval.session_id == session_id)
     if status is not None:
@@ -65,7 +72,14 @@ async def decide(
     approval_id: uuid.UUID,
     body: DecisionIn,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> ApprovalOut:
+    appr = await db.get(Approval, approval_id)
+    if appr is None:
+        raise HTTPException(status_code=404, detail="approval not found")
+    sess = await db.get(Session, appr.session_id)
+    if sess is None or sess.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="approval not found")
     try:
         appr = await agent.decide_approval(
             db, approval_id, body.decision, body.reason
