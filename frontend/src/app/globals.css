@@ -8,7 +8,15 @@ body,
   height: 100%;
 }
 
+html {
+  @apply bg-white text-neutral-900;
+}
+
+html.dark {
+  @apply bg-neutral-950 text-neutral-100;
+}
+
 body {
-  @apply bg-neutral-950 text-neutral-100 antialiased;
+  @apply antialiased;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }

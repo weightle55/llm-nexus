@@ -15,11 +15,11 @@ function bubbleClass(role: DisplayMessage["role"]) {
     case "user":
       return "bg-blue-600 text-white";
     case "assistant":
-      return "bg-neutral-800 text-neutral-100";
+      return "bg-neutral-200 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100";
     case "tool":
-      return "bg-neutral-900 text-emerald-300 border border-neutral-800 font-mono text-xs";
+      return "bg-neutral-100 dark:bg-neutral-900 text-emerald-700 dark:text-emerald-300 border border-neutral-200 dark:border-neutral-800 font-mono text-xs";
     default:
-      return "bg-neutral-900 text-neutral-400 text-xs";
+      return "bg-neutral-100 dark:bg-neutral-900 text-neutral-500 dark:text-neutral-400 text-xs";
   }
 }
 
