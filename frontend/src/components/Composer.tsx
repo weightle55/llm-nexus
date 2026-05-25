@@ -18,7 +18,7 @@ export function Composer({ disabled, onSend }: Props) {
   }
 
   return (
-    <div className="border-t border-neutral-800 p-3">
+    <div className="border-t border-neutral-200 dark:border-neutral-800 p-3">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -38,7 +38,7 @@ export function Composer({ disabled, onSend }: Props) {
           placeholder={disabled ? "Awaiting…" : "Type a message — Enter to send"}
           rows={2}
           disabled={disabled}
-          className="flex-1 resize-none rounded bg-neutral-900 border border-neutral-800 px-3 py-2 text-sm focus:outline-none focus:border-neutral-600 disabled:opacity-50"
+          className="flex-1 resize-none rounded bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-800 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:border-neutral-500 dark:focus:border-neutral-600 disabled:opacity-50"
         />
         <button
           type="submit"
