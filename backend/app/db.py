@@ -1,6 +1,4 @@
-import asyncio
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -35,24 +33,23 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
-_BACKEND_DIR = Path(__file__).resolve().parents[1]
-_ALEMBIC_INI = _BACKEND_DIR / "alembic.ini"
-
-
 def _run_alembic_upgrade() -> None:
+    """별도 프로세스에서 호출하기 위한 헬퍼 (start-all.ps1 가 사용)."""
+
+    from pathlib import Path
+
     from alembic import command
     from alembic.config import Config
 
-    cfg = Config(str(_ALEMBIC_INI))
+    backend_dir = Path(__file__).resolve().parents[1]
+    cfg = Config(str(backend_dir / "alembic.ini"))
     command.upgrade(cfg, "head")
 
 
 async def init_db() -> None:
-    """기동 시 Alembic 마이그레이션을 head 까지 적용.
+    """ORM 매퍼 등록만 한다. 스키마 적용은 별도 alembic 명령 (start-all.ps1 또는 수동).
 
-    동기 alembic 명령을 별도 스레드에서 실행해 현재 event loop 를 막지 않는다.
+    lifespan 안에서 alembic upgrade 를 호출하는 방식은 환경에 따라 hang 이 재현돼서 제거.
     """
 
     from . import models  # noqa: F401  - register ORM mappers
-
-    await asyncio.to_thread(_run_alembic_upgrade)

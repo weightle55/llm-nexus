@@ -42,10 +42,16 @@ if ($LASTEXITCODE -ne 0) {
 if (-not $NoBackend) {
     Write-Host "[2/3] FastAPI 백엔드 (새 창)..." -ForegroundColor Cyan
     $venvUvicorn = Join-Path $root ".venv\Scripts\uvicorn.exe"
+    $venvAlembic = Join-Path $root ".venv\Scripts\alembic.exe"
     if (-not (Test-Path $venvUvicorn)) {
         Write-Error ".venv\Scripts\uvicorn.exe 가 없음. .\.venv\Scripts\pip install -r backend\requirements.txt 먼저 실행."
         exit 1
     }
+    # 백엔드 기동 전 마이그레이션 적용 (lifespan 자동화 대신 명시적).
+    Write-Host "  → alembic upgrade head" -ForegroundColor DarkCyan
+    Push-Location (Join-Path $root "backend")
+    & $venvAlembic upgrade head
+    Pop-Location
     Start-Process powershell -ArgumentList @(
         "-NoExit", "-Command",
         "Set-Location '$root'; & '$venvUvicorn' backend.app.main:app --host 0.0.0.0 --port 8000 --reload"

@@ -8,7 +8,9 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import agent
+from ..auth import get_current_user
 from ..db import get_db
+from ..models import Session, User
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -53,8 +55,21 @@ async def _to_sse(
         yield _format_sse("error", {"detail": f"{type(e).__name__}: {e}"})
 
 
+async def _assert_owner(
+    db: AsyncSession, session_id: uuid.UUID, user: User
+) -> None:
+    sess = await db.get(Session, session_id)
+    if sess is None or sess.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="session not found")
+
+
 @router.post("", response_model=ChatOut)
-async def chat(body: ChatIn, db: AsyncSession = Depends(get_db)) -> ChatOut:
+async def chat(
+    body: ChatIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChatOut:
+    await _assert_owner(db, body.session_id, user)
     try:
         result = await agent.run_turn(db, body.session_id, body.message)
     except ValueError as e:
@@ -64,8 +79,11 @@ async def chat(body: ChatIn, db: AsyncSession = Depends(get_db)) -> ChatOut:
 
 @router.post("/resume", response_model=ChatOut)
 async def resume(
-    body: ChatResumeIn, db: AsyncSession = Depends(get_db)
+    body: ChatResumeIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> ChatOut:
+    await _assert_owner(db, body.session_id, user)
     try:
         result = await agent.resume_turn(db, body.session_id)
     except ValueError as e:
@@ -75,8 +93,11 @@ async def resume(
 
 @router.post("/stream")
 async def chat_stream(
-    body: ChatIn, db: AsyncSession = Depends(get_db)
+    body: ChatIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> StreamingResponse:
+    await _assert_owner(db, body.session_id, user)
     gen = agent.run_turn_stream(db, body.session_id, body.message)
     return StreamingResponse(
         _to_sse(gen),
@@ -87,8 +108,11 @@ async def chat_stream(
 
 @router.post("/resume/stream")
 async def resume_stream(
-    body: ChatResumeIn, db: AsyncSession = Depends(get_db)
+    body: ChatResumeIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> StreamingResponse:
+    await _assert_owner(db, body.session_id, user)
     gen = agent.resume_turn_stream(db, body.session_id)
     return StreamingResponse(
         _to_sse(gen),

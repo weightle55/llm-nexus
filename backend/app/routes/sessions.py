@@ -6,8 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth import get_current_user
 from ..db import get_db
-from ..models import Message, Session
+from ..models import Message, Session, User
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -31,11 +32,22 @@ class MessageOut(BaseModel):
     created_at: datetime
 
 
+async def _get_owned_session(
+    db: AsyncSession, session_id: uuid.UUID, user: User
+) -> Session:
+    sess = await db.get(Session, session_id)
+    if sess is None or sess.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="session not found")
+    return sess
+
+
 @router.post("", response_model=SessionOut)
 async def create_session(
-    body: SessionCreate, db: AsyncSession = Depends(get_db)
+    body: SessionCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> SessionOut:
-    sess = Session(title=body.title)
+    sess = Session(title=body.title, owner_id=user.id)
     db.add(sess)
     await db.commit()
     await db.refresh(sess)
@@ -48,9 +60,16 @@ async def create_session(
 
 
 @router.get("", response_model=list[SessionOut])
-async def list_sessions(db: AsyncSession = Depends(get_db)) -> list[SessionOut]:
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[SessionOut]:
     rows = (
-        await db.execute(select(Session).order_by(Session.created_at.desc()))
+        await db.execute(
+            select(Session)
+            .where(Session.owner_id == user.id)
+            .order_by(Session.created_at.desc())
+        )
     ).scalars().all()
     return [
         SessionOut(
@@ -62,11 +81,11 @@ async def list_sessions(db: AsyncSession = Depends(get_db)) -> list[SessionOut]:
 
 @router.get("/{session_id}/messages", response_model=list[MessageOut])
 async def list_messages(
-    session_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[MessageOut]:
-    sess = await db.get(Session, session_id)
-    if sess is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    await _get_owned_session(db, session_id, user)
     rows = (
         await db.execute(
             select(Message)

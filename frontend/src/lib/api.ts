@@ -1,3 +1,5 @@
+import { authHeader, type CurrentUser } from "./auth";
+
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
@@ -28,7 +30,20 @@ export type Approval = {
   decided_at?: string | null;
 };
 
+export type TokenResponse = {
+  access_token: string;
+  token_type: string;
+};
+
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("unauthorized");
+    this.name = "UnauthorizedError";
+  }
+}
+
 async function json<T>(res: Response): Promise<T> {
+  if (res.status === 401) throw new UnauthorizedError();
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${text}`);
@@ -36,31 +51,65 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+function authedJson(extra?: Record<string, string>): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    ...authHeader(),
+    ...(extra ?? {}),
+  };
+}
+
 export const api = {
+  // auth
+  register: (email: string, password: string) =>
+    fetch(`${API_BASE}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }).then(json<TokenResponse>),
+
+  login: (email: string, password: string) =>
+    fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }).then(json<TokenResponse>),
+
+  me: () =>
+    fetch(`${API_BASE}/auth/me`, { headers: authHeader() }).then(
+      json<CurrentUser>,
+    ),
+
+  // sessions
   listSessions: () =>
-    fetch(`${API_BASE}/sessions`).then(json<Session[]>),
+    fetch(`${API_BASE}/sessions`, { headers: authHeader() }).then(
+      json<Session[]>,
+    ),
 
   createSession: (title?: string) =>
     fetch(`${API_BASE}/sessions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authedJson(),
       body: JSON.stringify({ title: title ?? null }),
     }).then(json<Session>),
 
   listMessages: (sessionId: string) =>
-    fetch(`${API_BASE}/sessions/${sessionId}/messages`).then(
-      json<ChatMessage[]>,
-    ),
+    fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
+      headers: authHeader(),
+    }).then(json<ChatMessage[]>),
 
+  // approvals
   listApprovals: (sessionId?: string) => {
     const qs = sessionId ? `?session_id=${sessionId}` : "";
-    return fetch(`${API_BASE}/approvals${qs}`).then(json<Approval[]>);
+    return fetch(`${API_BASE}/approvals${qs}`, {
+      headers: authHeader(),
+    }).then(json<Approval[]>);
   },
 
   decideApproval: (id: string, decision: "approve" | "deny", reason?: string) =>
     fetch(`${API_BASE}/approvals/${id}/decide`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authedJson(),
       body: JSON.stringify({ decision, reason: reason ?? null }),
     }).then(json<Approval>),
 };
