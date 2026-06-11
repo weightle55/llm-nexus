@@ -1,0 +1,13 @@
+{
+  "_comment": "MCP 서버 등록. enabled=true 인 서버만 백엔드 기동 시 연결한다. Blender 는 Blender 를 켜고 blender-mcp 애드온의 'Start MCP Server' 를 누른 뒤 enabled 로 바꿀 것.",
+  "servers": [
+    {
+      "name": "blender",
+      "command": "uvx",
+      "args": ["blender-mcp"],
+      "env": { "UV_NATIVE_TLS": "1" },
+      "enabled": false,
+      "approval_keywords": ["exec", "code", "run"]
+    }
+  ]
+}

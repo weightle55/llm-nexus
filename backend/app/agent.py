@@ -7,19 +7,46 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import llm
+from .mcp_client import mcp_manager
 from .models import Approval, AuditLog, Message, Session
-from .tools.registry import APPROVAL_REQUIRED, TOOLS, call_tool
+from .tools.registry import TOOLS, call_tool, requires_approval
+
+
+def _all_tools() -> list[dict]:
+    """로컬 도구 + 연결된 MCP 서버 도구."""
+    return TOOLS + mcp_manager.openai_tools()
+
+
+async def _execute_tool(name: str, args_json: str) -> str:
+    """MCP 도구면 워커로 위임(async), 아니면 로컬 동기 실행."""
+    if mcp_manager.has_tool(name):
+        return await mcp_manager.call_tool(name, args_json)
+    return call_tool(name, args_json)
+
+
+def _needs_approval(name: str, args_json: str | None) -> bool:
+    return requires_approval(name, args_json) or mcp_manager.requires_approval(name)
 
 MAX_TOOL_ITERATIONS = 8
 
 SYSTEM_PROMPT = (
-    "You are a local computer-control agent. You can read, write, and list "
-    "files inside the user's workspace via the fs_* tools, and you can run "
-    "shell commands via shell_exec (which requires human approval). When the "
-    "user asks for an operation, call the appropriate tool instead of just "
-    "describing what you would do. After every tool result, always reply "
-    "with a short confirmation sentence summarizing what happened — never "
-    "leave the final response empty."
+    "You are a local computer-control agent operating inside a sandboxed "
+    "workspace. Available tools:\n"
+    "- fs_read / fs_write / fs_list — read, write, and list workspace files.\n"
+    "- fs_tree — inspect directory structure recursively before editing.\n"
+    "- fs_search — grep file contents (optionally limited by a glob).\n"
+    "- fs_mkdir / fs_move — create directories, move or rename entries.\n"
+    "- fs_delete — delete a file (automatic) or directory (needs approval).\n"
+    "- web_fetch — fetch a public web page as text for documentation/research.\n"
+    "- search_blender_docs — authoritative Blender 5.1 API/manual lookup; call "
+    "it BEFORE writing bpy code or answering a Blender question (your bpy "
+    "knowledge may be wrong for 5.1).\n"
+    "- shell_exec — run a shell command (requires human approval).\n"
+    "Prefer fs_tree/fs_search to orient yourself before making changes. When "
+    "the user asks for an operation, call the appropriate tool instead of just "
+    "describing what you would do. After every tool result, always reply with "
+    "a short confirmation sentence summarizing what happened — never leave the "
+    "final response empty."
 )
 
 Event = tuple[str, dict[str, Any]]
@@ -114,7 +141,7 @@ async def _stream_completion(
     out: dict[str, Any],
 ) -> AsyncGenerator[Event, None]:
     """LLM 호출을 스트림으로 소비하면서 'token' 이벤트를 yield. 결과는 `out` 딕셔너리에 저장."""
-    stream = await llm.chat(convo, tools=TOOLS, stream=True)
+    stream = await llm.chat(convo, tools=_all_tools(), stream=True)
     content_parts: list[str] = []
     tc_buf: dict[int, dict[str, Any]] = {}
 
@@ -163,7 +190,7 @@ async def _run_auto_tool(
     args_json = s_tc["function"].get("arguments") or "{}"
     tc_id = s_tc["id"]
 
-    result = call_tool(name, args_json)
+    result = await _execute_tool(name, args_json)
     await _audit(
         db,
         session_id,
@@ -240,7 +267,7 @@ async def _loop_stream(
         for s_tc in tool_calls:
             yield ("tool_call", s_tc)
             name = s_tc["function"]["name"]
-            if name in APPROVAL_REQUIRED:
+            if _needs_approval(name, s_tc["function"].get("arguments")):
                 await _queue_approval(db, session_id, s_tc)
                 deferred_any = True
             else:
@@ -355,7 +382,7 @@ async def resume_turn_stream(
             continue
 
         if appr.status == "approved":
-            result = call_tool(name, args_json)
+            result = await _execute_tool(name, args_json)
             await _audit(
                 db,
                 session_id,

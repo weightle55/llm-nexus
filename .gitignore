@@ -45,3 +45,6 @@ workspace/*
 # 일회성 임시 파일
 .tmp-*.json
 .system-root-cas.pem
+
+# Borrowed Blender API docs index (large, regenerable)
+/data/

@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from .config import settings
 from .db import SessionLocal, init_db
+from .mcp_client import mcp_manager
 from .routes import approvals as approvals_router
 from .routes import auth as auth_router
 from .routes import capabilities as capabilities_router
@@ -17,7 +18,9 @@ from .routes import sessions as sessions_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await mcp_manager.startup()
     yield
+    await mcp_manager.shutdown()
 
 
 app = FastAPI(title="Gemma Local Agent", version="0.1.0", lifespan=lifespan)

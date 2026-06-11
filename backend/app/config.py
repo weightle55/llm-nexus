@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     llama_model: str = "gemma-4-e4b-it"
     database_url: str = "postgresql+asyncpg://gemma:gemma@localhost:5432/gemma"
     workspace_dir: Path = PROJECT_ROOT / "workspace"
+    blender_docs_index: Path = PROJECT_ROOT / "data" / "blender_api_index.jsonl"
+    mcp_config: Path = PROJECT_ROOT / "mcp_servers.json"
 
     obsidian_api_key: str = ""
     obsidian_host: str = "127.0.0.1"
@@ -27,9 +29,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 일
 
-    @field_validator("workspace_dir")
+    @field_validator("workspace_dir", "blender_docs_index", "mcp_config")
     @classmethod
-    def _resolve_workspace(cls, v: Path) -> Path:
+    def _resolve_path(cls, v: Path) -> Path:
         return v if v.is_absolute() else (PROJECT_ROOT / v).resolve()
 
 
