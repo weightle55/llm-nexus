@@ -9,6 +9,7 @@ from .config import settings
 from .db import SessionLocal, init_db
 from .routes import approvals as approvals_router
 from .routes import auth as auth_router
+from .routes import capabilities as capabilities_router
 from .routes import chat as chat_router
 from .routes import sessions as sessions_router
 
@@ -33,6 +34,7 @@ app.include_router(auth_router.router)
 app.include_router(sessions_router.router)
 app.include_router(chat_router.router)
 app.include_router(approvals_router.router)
+app.include_router(capabilities_router.router)
 
 
 @app.get("/health")

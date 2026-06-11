@@ -35,6 +35,23 @@ export type TokenResponse = {
   token_type: string;
 };
 
+export type CapabilityItem = {
+  label: string;
+  desc: string;
+  approval: boolean;
+};
+
+export type CapabilityGroup = {
+  title: string;
+  items: CapabilityItem[];
+};
+
+export type Capabilities = {
+  intro: string;
+  groups: CapabilityGroup[];
+  note: string;
+};
+
 export class UnauthorizedError extends Error {
   constructor() {
     super("unauthorized");
@@ -79,6 +96,10 @@ export const api = {
     fetch(`${API_BASE}/auth/me`, { headers: authHeader() }).then(
       json<CurrentUser>,
     ),
+
+  // capabilities (static, no auth)
+  getCapabilities: () =>
+    fetch(`${API_BASE}/capabilities`).then(json<Capabilities>),
 
   // sessions
   listSessions: () =>

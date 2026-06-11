@@ -7,6 +7,7 @@ import { stream, type StreamEvent } from "@/lib/stream";
 import { MessageList, type DisplayMessage } from "./MessageList";
 import { Composer } from "./Composer";
 import { ApprovalModal } from "./ApprovalModal";
+import { WelcomeCard } from "./WelcomeCard";
 
 type StreamingMsg = {
   id: string;
@@ -247,7 +248,11 @@ export function ChatView({ sessionId }: { sessionId: string }) {
           </div>
         </div>
       )}
-      <MessageList messages={displayed} />
+      {displayed.length === 0 && !busy ? (
+        <WelcomeCard />
+      ) : (
+        <MessageList messages={displayed} />
+      )}
       <Composer disabled={busy || approvals.length > 0} onSend={handleSend} />
       <ApprovalModal
         approvals={approvals}
