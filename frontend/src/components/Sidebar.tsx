@@ -8,6 +8,7 @@ import { ThemeToggle } from "./ThemeToggle";
 type Props = {
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onDeleted: (id: string) => void;
   isOpen: boolean;
   onClose: () => void;
   user: CurrentUser;
@@ -17,6 +18,7 @@ type Props = {
 export function Sidebar({
   selectedId,
   onSelect,
+  onDeleted,
   isOpen,
   onClose,
   user,
@@ -36,6 +38,22 @@ export function Sidebar({
       onClose();
     },
   });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.deleteSession(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      onDeleted(id);
+    },
+  });
+
+  function handleDelete(s: Session) {
+    const label = s.title ?? "Untitled";
+    if (!window.confirm(`"${label}" 세션을 삭제할까요? 되돌릴 수 없습니다.`)) {
+      return;
+    }
+    deleteMut.mutate(s.id);
+  }
 
   return (
     <>
@@ -78,22 +96,41 @@ export function Sidebar({
             <div className="p-3 text-xs text-neutral-500">Loading…</div>
           )}
           {sessions.map((s) => (
-            <button
+            <div
               key={s.id}
-              onClick={() => {
-                onSelect(s.id);
-                onClose();
-              }}
               className={`
-                w-full text-left px-3 py-2 text-sm
+                group relative flex items-center
                 border-b border-neutral-100 dark:border-neutral-900
                 hover:bg-neutral-100 dark:hover:bg-neutral-900
                 ${s.id === selectedId ? "bg-neutral-100 dark:bg-neutral-900" : ""}
               `}
             >
-              <div className="truncate">{s.title ?? "Untitled"}</div>
-              <div className="text-[10px] text-neutral-500 truncate">{s.id}</div>
-            </button>
+              <button
+                onClick={() => {
+                  onSelect(s.id);
+                  onClose();
+                }}
+                className="min-w-0 flex-1 text-left px-3 py-2 text-sm"
+              >
+                <div className="truncate">{s.title ?? "Untitled"}</div>
+                <div className="text-[10px] text-neutral-500 truncate">{s.id}</div>
+              </button>
+              <button
+                onClick={() => handleDelete(s)}
+                disabled={deleteMut.isPending && deleteMut.variables === s.id}
+                aria-label="세션 삭제"
+                title="세션 삭제"
+                className="
+                  shrink-0 mr-2 rounded p-1 text-neutral-400
+                  opacity-0 group-hover:opacity-100 focus:opacity-100
+                  hover:bg-neutral-200 dark:hover:bg-neutral-800
+                  hover:text-red-600 dark:hover:text-red-400
+                  disabled:opacity-50
+                "
+              >
+                🗑
+              </button>
+            </div>
           ))}
           {!isLoading && sessions.length === 0 && (
             <div className="p-3 text-xs text-neutral-500">No sessions yet.</div>

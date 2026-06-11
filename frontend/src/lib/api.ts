@@ -93,6 +93,17 @@ export const api = {
       body: JSON.stringify({ title: title ?? null }),
     }).then(json<Session>),
 
+  deleteSession: (sessionId: string) =>
+    fetch(`${API_BASE}/sessions/${sessionId}`, {
+      method: "DELETE",
+      headers: authHeader(),
+    }).then((res) => {
+      if (res.status === 401) throw new UnauthorizedError();
+      if (!res.ok && res.status !== 204) {
+        throw new Error(`${res.status} ${res.statusText}`);
+      }
+    }),
+
   listMessages: (sessionId: string) =>
     fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
       headers: authHeader(),

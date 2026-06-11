@@ -57,6 +57,9 @@ export default function Home() {
       <Sidebar
         selectedId={sessionId}
         onSelect={setSessionId}
+        onDeleted={(id) => {
+          if (id === sessionId) setSessionId(null);
+        }}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         user={user}
